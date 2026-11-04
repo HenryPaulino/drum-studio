@@ -1,4 +1,3 @@
-
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount } from 'vue'
 import { Play, Pause, Minus, Plus, Volume2 } from 'lucide-vue-next'
@@ -16,13 +15,13 @@ const signatures: Record<string, number> = {
   '2/4': 2,
   '3/4': 3,
   '4/4': 4,
-  '6/8': 6
+  '6/8': 6,
 }
 
 const subdivisionOptions = [
   { label: 'Semínimas', value: '4n' },
   { label: 'Colcheias', value: '8n' },
-  { label: 'Semicolcheias', value: '16n' }
+  { label: 'Semicolcheias', value: '16n' },
 ]
 
 let synth: Tone.MembraneSynth | null = null
@@ -43,9 +42,7 @@ function changeBpm(value: number) {
 function updateVolume() {
   if (!synth) return
 
-  synth.volume.value = volume.value === 0
-    ? -Infinity
-    : Tone.gainToDb(volume.value / 100)
+  synth.volume.value = volume.value === 0 ? -Infinity : Tone.gainToDb(volume.value / 100)
 }
 
 // Inicia ou pausa o metrônomo
@@ -71,18 +68,16 @@ async function toggleMetronome() {
         attack: 0.001,
         decay: 0.12,
         sustain: 0,
-        release: 0.01
-      }
+        release: 0.01,
+      },
     }).toDestination()
 
     updateVolume()
 
-   const beatsPerBar = signatures[timeSignature.value] ?? 4
+    const beatsPerBar = signatures[timeSignature.value] ?? 4
 
     // Calcula as subdivisões de cada tempo
-    const subdivisionsPerBeat =
-      subdivision.value === '4n' ? 1 :
-      subdivision.value === '8n' ? 2 : 4
+    const subdivisionsPerBeat = subdivision.value === '4n' ? 1 : subdivision.value === '8n' ? 2 : 4
 
     const totalTicks = beatsPerBar * subdivisionsPerBeat
 
@@ -98,12 +93,7 @@ async function toggleMetronome() {
 
       if (isMainBeat) {
         // Primeiro tempo recebe um som mais forte
-        synth?.triggerAttackRelease(
-          isFirstBeat ? 'C3' : 'G2',
-          '16n',
-          time,
-          isFirstBeat ? 1 : 0.65
-        )
+        synth?.triggerAttackRelease(isFirstBeat ? 'C3' : 'G2', '16n', time, isFirstBeat ? 1 : 0.65)
       } else {
         // Subdivisões recebem um som mais leve
         synth?.triggerAttackRelease('C4', '32n', time, 0.3)
@@ -156,7 +146,6 @@ onBeforeUnmount(stopMetronome)
 
 <template>
   <article class="tool-card metronome-card">
-
     <div class="card-heading">
       <div class="card-icon">
         <Volume2 :size="21" />
@@ -178,10 +167,7 @@ onBeforeUnmount(stopMetronome)
     </div>
 
     <div class="tempo-controls">
-      <button
-        @click="changeBpm(-1)"
-        aria-label="Diminuir BPM"
-      >
+      <button @click="changeBpm(-1)" aria-label="Diminuir BPM">
         <Minus :size="19" />
       </button>
 
@@ -194,10 +180,7 @@ onBeforeUnmount(stopMetronome)
         @input="updateBpm"
       />
 
-      <button
-        @click="changeBpm(1)"
-        aria-label="Aumentar BPM"
-      >
+      <button @click="changeBpm(1)" aria-label="Aumentar BPM">
         <Plus :size="19" />
       </button>
     </div>
@@ -219,11 +202,7 @@ onBeforeUnmount(stopMetronome)
         Divisão
 
         <select v-model="subdivision">
-          <option
-            v-for="option in subdivisionOptions"
-            :key="option.value"
-            :value="option.value"
-          >
+          <option v-for="option in subdivisionOptions" :key="option.value" :value="option.value">
             {{ option.label }}
           </option>
         </select>
@@ -259,16 +238,12 @@ onBeforeUnmount(stopMetronome)
     </div>
 
     <!-- Botão de reprodução -->
-    <button
-      class="play-button"
-      @click="toggleMetronome"
-    >
+    <button class="play-button" @click="toggleMetronome">
       <Pause v-if="isPlaying" :size="19" />
       <Play v-else :size="19" />
 
       {{ isPlaying ? 'Parar metrônomo' : 'Iniciar metrônomo' }}
     </button>
-
   </article>
 </template>
 
