@@ -45,11 +45,11 @@ O login Google identifica sua conta e permite o backup; não dá acesso para bai
 
 ## Publicação HTTPS no GitHub Pages
 
-O workflow `.github/workflows/deploy-pages.yml` publica automaticamente o app quando há um push para `main`. O endereço padrão deste repositório é `https://henrypaulino.github.io/drum-studio/`.
+O workflow `.github/workflows/deploy-pages.yml` publica automaticamente o app quando há um push para `main` ou `principal`. O endereço padrão deste repositório é `https://henrypaulino.github.io/drum-studio/`.
 
 1. No GitHub, abra **Settings → Pages** e selecione **GitHub Actions** como origem da publicação.
 2. Em **Settings → Secrets and variables → Actions**, crie o secret `VITE_GOOGLE_CLIENT_ID` com o OAuth Client ID do Google. Sem ele, o site publica, mas login e cópia de segurança no Drive ficam desativados.
-3. Faça push para `main` ou execute **Actions → Deploy to GitHub Pages → Run workflow**. O primeiro deploy pode levar alguns minutos.
+3. Faça push para `main` ou `principal`, ou execute **Actions → Deploy to GitHub Pages → Run workflow**. O primeiro deploy pode levar alguns minutos.
 4. No projeto Google Cloud, adicione `https://henrypaulino.github.io` às origens JavaScript autorizadas do OAuth Client ID.
 
 O Vite usa o caminho `/drum-studio/` somente no workflow do GitHub Pages; desenvolvimento local e outros builds continuam usando `/`.
