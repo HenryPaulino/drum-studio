@@ -1,11 +1,21 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { BookOpen, ExternalLink, FileUp, Music2, Plus, Search, Trash2 } from 'lucide-vue-next'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { BookOpen, Cloud, CloudDownload, CloudUpload, ExternalLink, FileUp, LogIn, LogOut, Music2, Plus, Search, Trash2 } from 'lucide-vue-next'
 import type { OpenSheetMusicDisplay as SheetMusicRenderer } from 'opensheetmusicdisplay'
-import SharedCatalog from './SharedCatalog.vue'
+import {
+  deleteDriveScoreBackup,
+  downloadDriveScoreBackup,
+  isGoogleDriveConfigured,
+  listDriveScoreBackups,
+  prepareGoogleDrive,
+  signInWithGoogle,
+  signOutFromGoogle,
+  uploadDriveScoreBackup,
+  type DriveScoreBackup,
+} from '../lib/googleDrive'
 
 type Instrument = 'Bateria' | 'Saxofone' | 'Flauta' | 'Violão' | 'Teclado' | 'Outro'
-type Tab = 'library' | 'scores' | 'shared'
+type Tab = 'library' | 'scores'
 
 interface SongReference {
   id: string
@@ -44,6 +54,9 @@ const renderTarget = ref<HTMLElement | null>(null)
 const notice = ref('')
 const errorMessage = ref('')
 const isLoading = ref(false)
+const isGoogleReady = ref(!isGoogleDriveConfigured)
+const googleUser = ref<{ email?: string; name?: string } | null>(null)
+const cloudScores = ref<DriveScoreBackup[]>([])
 
 const instruments: Instrument[] = ['Bateria', 'Saxofone', 'Flauta', 'Violão', 'Teclado', 'Outro']
 const collections = ['Louvor ICM', 'Outro louvor', 'Outras músicas']
@@ -195,6 +208,107 @@ async function refreshScores() {
   scores.value = await readScores(database)
 }
 
+async function refreshCloudScores() {
+  if (!googleUser.value) return
+  cloudScores.value = await listDriveScoreBackups()
+}
+
+async function signIn() {
+  if (!isGoogleDriveConfigured) return
+  errorMessage.value = ''
+  isLoading.value = true
+  try {
+    googleUser.value = await signInWithGoogle()
+    await refreshCloudScores()
+    notice.value = 'Conectado ao Google Drive. Suas cópias ficam na sua conta Google.'
+  } catch (error) {
+    console.error('Não foi possível conectar ao Google Drive:', error)
+    googleUser.value = null
+    errorMessage.value = error instanceof Error ? error.message : 'Não foi possível conectar ao Google Drive.'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+async function signOut() {
+  errorMessage.value = ''
+  signOutFromGoogle()
+  googleUser.value = null
+  cloudScores.value = []
+}
+
+async function saveScoreToCloud(score: StoredScore) {
+  if (!googleUser.value) return
+  errorMessage.value = ''
+  notice.value = ''
+  if (score.data.size > 20 * 1024 * 1024) {
+    errorMessage.value = 'A cópia de segurança aceita partituras de até 20 MB.'
+    return
+  }
+
+  isLoading.value = true
+  try {
+    await uploadDriveScoreBackup({
+      scoreId: score.id,
+      title: score.title.slice(0, 160),
+      instrument: score.instrument,
+      fileName: score.fileName.slice(0, 255),
+    }, score.data)
+    await refreshCloudScores()
+    notice.value = 'Cópia de segurança salva no Google Drive.'
+  } catch (error) {
+    console.error('Não foi possível salvar a partitura no Google Drive:', error)
+    errorMessage.value = error instanceof Error ? error.message : 'Não foi possível salvar no Google Drive.'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+async function restoreCloudScore(score: DriveScoreBackup) {
+  if (!googleUser.value) return
+  errorMessage.value = ''
+  notice.value = ''
+  isLoading.value = true
+  try {
+    const data = await downloadDriveScoreBackup(score.id)
+    const restoredScore: StoredScore = {
+      id: score.scoreId,
+      title: score.title,
+      instrument: score.instrument,
+      fileName: score.fileName,
+      data,
+      addedAt: score.createdAt,
+    }
+    if (!database) throw new Error('O armazenamento local não está disponível neste navegador.')
+    await saveScore(database, restoredScore)
+    await refreshScores()
+    await showScore(restoredScore)
+    notice.value = 'Partitura restaurada neste dispositivo.'
+  } catch (error) {
+    console.error('Não foi possível restaurar a partitura:', error)
+    errorMessage.value = error instanceof Error ? error.message : 'Não foi possível restaurar essa partitura. Verifique sua conexão e tente novamente.'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+async function removeCloudScore(score: DriveScoreBackup) {
+  if (!googleUser.value) return
+  errorMessage.value = ''
+  notice.value = ''
+  isLoading.value = true
+  try {
+    await deleteDriveScoreBackup(score.id)
+    await refreshCloudScores()
+    notice.value = 'Cópia removida do Google Drive. A cópia local não foi alterada.'
+  } catch (error) {
+    console.error('Não foi possível remover a cópia do Google Drive:', error)
+    errorMessage.value = error instanceof Error ? error.message : 'Não foi possível remover essa cópia do Google Drive.'
+  } finally {
+    isLoading.value = false
+  }
+}
+
 async function importScore(event: Event) {
   errorMessage.value = ''
   notice.value = ''
@@ -278,6 +392,14 @@ function exportScore(score: StoredScore) {
 
 onMounted(async () => {
   loadSongs()
+  if (isGoogleDriveConfigured) {
+    void prepareGoogleDrive().then(() => {
+      isGoogleReady.value = true
+    }).catch((error: unknown) => {
+      console.error('Não foi possível preparar o login Google:', error)
+      errorMessage.value = 'Não foi possível carregar o login Google. Verifique sua conexão e tente novamente.'
+    })
+  }
   try {
     database = await openDatabase()
     await refreshScores()
@@ -285,6 +407,10 @@ onMounted(async () => {
     console.error('Não foi possível iniciar o armazenamento de partituras:', error)
     errorMessage.value = 'Não foi possível abrir o armazenamento de partituras neste navegador.'
   }
+})
+
+onBeforeUnmount(() => {
+  renderer?.clear()
 })
 </script>
 
@@ -306,17 +432,12 @@ onMounted(async () => {
       <button role="tab" :aria-selected="activeTab === 'scores'" :class="{ active: activeTab === 'scores' }" @click="activeTab = 'scores'">
         <BookOpen :size="17" /> Partituras
       </button>
-      <button role="tab" :aria-selected="activeTab === 'shared'" :class="{ active: activeTab === 'shared' }" @click="activeTab = 'shared'">
-        <Music2 :size="17" /> Catálogo ICM
-      </button>
     </div>
 
     <p v-if="notice" class="success-message" role="status">{{ notice }}</p>
     <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
 
-    <SharedCatalog v-if="activeTab === 'shared'" />
-
-    <template v-else-if="activeTab === 'library'">
+    <template v-if="activeTab === 'library'">
       <section class="tool-card library-form">
         <div class="card-heading">
           <div class="card-icon"><Plus :size="21" /></div>
@@ -383,6 +504,38 @@ onMounted(async () => {
         <p class="legal-note">Compatível com .musicxml, .xml e .mxl. As partituras ficam neste dispositivo; importe apenas material que você tem autorização para usar.</p>
       </section>
 
+      <section class="tool-card cloud-backup">
+        <div class="cloud-backup-heading">
+          <div>
+            <div class="card-heading"><div class="card-icon"><Cloud :size="21" /></div><span class="coming-soon">CÓPIA DE SEGURANÇA</span></div>
+            <h3>Suas partituras na nuvem</h3>
+            <p>Guarde uma cópia privada no Google Drive e restaure suas partituras em outros dispositivos.</p>
+          </div>
+          <button v-if="googleUser" class="secondary-button" :disabled="isLoading" @click="signOut"><LogOut :size="17" /> Sair</button>
+        </div>
+
+        <p v-if="!isGoogleDriveConfigured" class="legal-note">Configure `VITE_GOOGLE_CLIENT_ID` para ativar a cópia de segurança. As partituras locais continuam disponíveis neste navegador.</p>
+        <template v-else-if="!googleUser">
+          <p class="legal-note">Entre com a conta Google associada ao YouTube. Os arquivos ficam no seu Google Drive; o app não acessa nem transcreve músicas do YouTube ou Spotify.</p>
+          <div class="cloud-login-actions">
+            <button class="secondary-button" :disabled="isLoading || !isGoogleReady" @click="signIn"><LogIn :size="17" /> {{ isGoogleReady ? 'Conectar Google Drive' : 'Carregando login...' }}</button>
+          </div>
+        </template>
+        <template v-else>
+          <p class="legal-note">Conectado como {{ googleUser.email || googleUser.name || 'conta Google' }}. Use “Enviar para nuvem” nas partituras locais para criar uma cópia segura.</p>
+          <div v-if="cloudScores.length" class="cloud-score-list">
+            <h4>Cópias salvas no Google Drive ({{ cloudScores.length }})</h4>
+            <article v-for="score in cloudScores" :key="score.id" class="song-row">
+              <div class="song-icon"><Cloud :size="19" /></div>
+              <div class="score-open"><strong>{{ score.title }}</strong><span>{{ score.instrument }} · {{ score.fileName }}</span></div>
+              <button class="icon-action" :disabled="isLoading" :aria-label="`Restaurar ${score.title}`" @click="restoreCloudScore(score)"><CloudDownload :size="18" /></button>
+              <button class="icon-action danger" :disabled="isLoading" :aria-label="`Remover cópia na nuvem de ${score.title}`" @click="removeCloudScore(score)"><Trash2 :size="18" /></button>
+            </article>
+          </div>
+          <p v-else class="legal-note">Você ainda não salvou partituras no Google Drive.</p>
+        </template>
+      </section>
+
       <section class="library-list-section">
         <div class="section-heading"><div><h3>Partituras por louvor e instrumento</h3><p>{{ filteredScores.length }} de {{ scores.length }} {{ scores.length === 1 ? 'partitura salva' : 'partituras salvas' }}</p></div></div>
         <div class="score-filters">
@@ -399,6 +552,13 @@ onMounted(async () => {
             <div class="song-icon"><BookOpen :size="20" /></div>
             <button class="score-open" @click="showScore(score)"><strong>{{ score.title }}</strong><span>{{ score.instrument }}<template v-if="songs.find((song) => song.id === score.songId)"> · {{ songs.find((song) => song.id === score.songId)?.title }}</template> · {{ score.fileName }}</span></button>
             <button class="icon-action" :aria-label="`Exportar ${score.title}`" @click="exportScore(score)"><FileUp :size="18" /></button>
+            <button
+              v-if="googleUser"
+              class="icon-action"
+              :disabled="isLoading || cloudScores.some((cloudScore) => cloudScore.scoreId === score.id)"
+              :aria-label="cloudScores.some((cloudScore) => cloudScore.scoreId === score.id) ? `${score.title} já tem cópia na nuvem` : `Enviar ${score.title} para a nuvem`"
+              @click="saveScoreToCloud(score)"
+            ><CloudUpload :size="18" /></button>
             <button class="icon-action danger" :aria-label="`Remover ${score.title}`" @click="removeScore(score)"><Trash2 :size="18" /></button>
           </article>
         </div>
@@ -423,6 +583,16 @@ onMounted(async () => {
 .library-tabs button { display: inline-flex; gap: 8px; align-items: center; padding: 12px 16px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); }
 .library-tabs button.active { border-bottom-color: var(--red); color: var(--text); }
 .library-form, .score-import { max-width: 760px; }
+.cloud-backup { max-width: 760px; }
+.cloud-backup-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.cloud-backup-heading .card-heading { margin-bottom: 14px; }
+.cloud-backup-heading h3 { margin-bottom: 8px; }
+.cloud-backup-heading p { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.cloud-login-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.cloud-score-list { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.cloud-score-list h4 { font-size: 13px; }
+.cloud-score-list .song-row { padding-inline: 0; }
+.icon-action:disabled, .secondary-button:disabled { opacity: .5; cursor: not-allowed; }
 .library-form .card-heading, .score-import .card-heading { margin-bottom: 16px; }
 .song-form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 20px; }
 .song-form label, .import-controls > label { display: flex; flex-direction: column; gap: 7px; color: var(--muted); font-size: 12px; }

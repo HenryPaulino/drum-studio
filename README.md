@@ -1,58 +1,55 @@
 # Drum Studio
 
-App de estudo musical para celular, tablet e desktop, com versão web e preparação para iOS com Capacitor.
+### Sua música. Seu ritmo. Seu espaço.
 
-## Recursos atuais
+O **Drum Studio** reúne em um só lugar as ferramentas que ajudam você a estudar, praticar e evoluir na música. Organize seu repertório, acompanhe partituras e pratique no seu ritmo — no computador, tablet ou celular.
 
-- Metrônomo com BPM, compasso, subdivisão e volume.
-- Afinador cromático pelo microfone do dispositivo. O áudio é analisado localmente.
-- Biblioteca de referências com links do Spotify e YouTube.
-- Importação, visualização e exportação de partituras MusicXML para bateria, saxofone, flauta e outros instrumentos.
-- Repertório local de louvores ICM, com busca e associação de partituras aos louvores e instrumentos.
-- Catálogo comunitário online de louvores e partituras MusicXML, com autenticação e aprovação antes da publicação.
-- Tema claro/escuro e navegação adaptada a telas pequenas.
+## Tudo para sua próxima sessão de estudo
 
-As referências do Spotify/YouTube abrem os serviços originais. A aplicação não baixa nem transcreve áudio desses serviços. Para visualizar partituras, importe um arquivo MusicXML que você tenha autorização para usar. Dados e partituras ficam armazenados localmente no navegador e não são sincronizados entre dispositivos.
+- **Metrônomo:** marque o tempo e pratique com mais precisão.
+- **Afinador cromático:** afine seu instrumento usando o microfone do dispositivo.
+- **Biblioteca musical:** organize suas músicas e referências do Spotify e YouTube.
+- **Partituras:** importe, visualize e exporte arquivos MusicXML para bateria, sopros e outros instrumentos.
+- **Repertório local:** organize músicas e referências do Spotify e YouTube no seu dispositivo.
+- **Seu jeito de estudar:** use tema claro ou escuro, com uma interface que se adapta a telas pequenas.
 
-Para organizar partituras de bateria de louvores ICM, cadastre o louvor na biblioteca e use o botão de partitura ao lado dele. O importador seleciona bateria e associa o MusicXML ao louvor; depois você pode buscar e filtrar o repertório por instrumento. O app não inclui nem transcreve partituras protegidas: use arquivos que você criou ou tem autorização para utilizar.
+### Menos tempo procurando. Mais tempo tocando.
 
-## Catálogo online compartilhado
+Do primeiro compasso à próxima música do repertório, o Drum Studio ajuda você a manter tudo à mão e aproveitar melhor cada sessão de estudo.
 
-O catálogo compartilhado usa Supabase (Postgres, autenticação e armazenamento privado de arquivos). Configure-o antes de executar/publicar o app:
-
-1. Crie um projeto Supabase e execute `supabase/migrations/20261104000000_shared_catalog.sql` no SQL Editor.
-2. Copie `.env.example` para `.env` e preencha `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` com as credenciais públicas do projeto. Nunca coloque uma `service_role` key no app.
-3. Crie uma conta no catálogo e confirme o e-mail. Para promover o primeiro moderador, encontre o UUID dessa conta em Authentication → Users e rode no SQL Editor: `insert into public.catalog_admins (user_id) values ('UUID-DO-MODERADOR');`.
-4. Moderadores analisam envios em Table Editor. Para publicar, altere `status` de `pending` para `approved` em `songs` e `scores`; para recusar, use `rejected`. Somente itens aprovados aparecem no catálogo público. Os arquivos ficam em bucket privado e as políticas RLS controlam o acesso.
-5. Ao compilar a versão iOS, use as mesmas variáveis de ambiente antes de `npm run ios:sync`.
-
-Sem essas credenciais, a aba Catálogo ICM informa que o serviço ainda não foi conectado; recursos locais continuam disponíveis. O Supabase precisa permanecer hospedado e acessível para que todos os usuários compartilhem o catálogo. A conta gratuita possui cotas e pode exigir upgrade conforme o uso.
-
-## Desenvolvimento
-
-Requer Node.js `^22.18.0` ou `>=24.12.0`.
+## Experimente no seu computador
 
 ```sh
 npm install
 npm run dev
 ```
 
-Para validar e gerar a versão de produção:
+Para gerar a versão de produção:
 
 ```sh
 npm run build
 ```
 
-O acesso ao afinador requer permissão de microfone e contexto seguro (HTTPS, ou localhost durante o desenvolvimento).
+## Cópia de segurança gratuita no Google Drive
 
-## Preparar para iPhone e iPad
+As partituras importadas são mantidas no armazenamento local do navegador. Para criar uma cópia na sua conta Google Drive e restaurá-la em outro dispositivo, configure o login Google:
 
-A versão iOS usa Capacitor e precisa ser compilada em um Mac com Xcode:
+1. No Google Cloud Console, crie um projeto e habilite a **Google Drive API**.
+2. Configure a tela de consentimento OAuth e crie um **OAuth Client ID** do tipo aplicação Web. Adicione `http://localhost:5173` e `https://henrypaulino.github.io` como origens JavaScript autorizadas.
+3. Configure `VITE_GOOGLE_CLIENT_ID` em `.env` para desenvolvimento. No GitHub, adicione o mesmo valor como secret `VITE_GOOGLE_CLIENT_ID` em **Settings → Secrets and variables → Actions**.
+4. Em **Partituras**, conecte a conta Google associada ao YouTube. Use o botão de nuvem ao lado de uma partitura para enviá-la; conecte a mesma conta em outro dispositivo para restaurá-la.
 
-1. Instale as dependências com `npm install`.
-2. Gere o projeto iOS uma vez com `npm run ios:add`.
-3. Para atualizar o app nativo depois de alterar o site, rode `npm run ios:sync`.
-4. Abra o projeto no Xcode com `npm run ios:open`, configure assinatura/equipe Apple e teste em iPhone e iPad.
-5. No Xcode, arquive e envie a versão pelo App Store Connect para revisão da Apple.
+O app solicita o escopo `drive.file`, limitado aos arquivos criados pelo próprio Drum Studio. As cópias ficam visíveis no seu Google Drive e usam o espaço disponível da sua conta; não há banco de dados ou armazenamento pago do app. O token de acesso fica apenas na memória da página e é solicitado novamente quando necessário. A cópia local e a cópia no Drive são independentes. A Google Drive API está sujeita às cotas do Google.
 
-O identificador iOS configurado é `com.henrypaulino.drumstudio`; confirme que ele está disponível e pertence à sua conta Apple antes de publicar. A publicação requer uma conta Apple Developer ativa, metadados e capturas de tela do app, além da revisão e aprovação da Apple. Este repositório não contém credenciais nem certificados de assinatura.
+O login Google identifica sua conta e permite o backup; não dá acesso para baixar nem transcrever o áudio do YouTube ou Spotify. Para criar/importar uma partitura, use arquivos MusicXML que você criou ou tem autorização para usar.
+
+## Publicação HTTPS no GitHub Pages
+
+O workflow `.github/workflows/deploy-pages.yml` publica automaticamente o app quando há um push para `main`. O endereço padrão deste repositório é `https://henrypaulino.github.io/drum-studio/`.
+
+1. No GitHub, abra **Settings → Pages** e selecione **GitHub Actions** como origem da publicação.
+2. Em **Settings → Secrets and variables → Actions**, crie o secret `VITE_GOOGLE_CLIENT_ID` com o OAuth Client ID do Google. Sem ele, o site publica, mas login e cópia de segurança no Drive ficam desativados.
+3. Faça push para `main` ou execute **Actions → Deploy to GitHub Pages → Run workflow**. O primeiro deploy pode levar alguns minutos.
+4. No projeto Google Cloud, adicione `https://henrypaulino.github.io` às origens JavaScript autorizadas do OAuth Client ID.
+
+O Vite usa o caminho `/drum-studio/` somente no workflow do GitHub Pages; desenvolvimento local e outros builds continuam usando `/`.
