@@ -1,4 +1,4 @@
-export type Instrument = 'Bateria' | 'Saxofone' | 'Flauta' | 'Violão' | 'Teclado' | 'Outro'
+export type Instrument = 'Bateria' | 'Baixo' | 'Saxofone' | 'Flauta' | 'Violão' | 'Teclado' | 'Outro'
 
 export interface DriveScoreBackup {
   id: string
@@ -7,6 +7,26 @@ export interface DriveScoreBackup {
   instrument: Instrument
   fileName: string
   createdAt: number
+  songId?: string
+}
+
+export interface DriveLibrarySong {
+  id: string
+  title: string
+  artist: string
+  url?: string
+  platform?: 'Spotify' | 'YouTube'
+  collection?: string
+}
+
+export interface DriveLibrarySnapshot {
+  songs: DriveLibrarySong[]
+}
+
+export interface GoogleDriveUser {
+  id: string
+  email?: string
+  name?: string
 }
 
 interface GoogleTokenResponse {
@@ -17,6 +37,7 @@ interface GoogleTokenResponse {
 }
 
 interface GoogleUserInfo {
+  sub?: string
   email?: string
   name?: string
 }
@@ -25,7 +46,8 @@ interface GoogleDriveFile {
   id: string
   name: string
   description?: string
-  createdTime: string
+  createdTime?: string
+  modifiedTime?: string
 }
 
 interface GoogleDriveFileList {
@@ -60,6 +82,7 @@ const driveScope = 'openid email profile https://www.googleapis.com/auth/drive.f
 let token = ''
 let tokenExpiresAt = 0
 let googleScriptPromise: Promise<void> | null = null
+let connectedUser: GoogleDriveUser | null = null
 
 export const isGoogleDriveConfigured = Boolean(clientId)
 
@@ -142,22 +165,105 @@ async function driveRequest(path: string, init: RequestInit = {}, upload = false
   return response
 }
 
-export async function signInWithGoogle(): Promise<GoogleUserInfo> {
+export async function signInWithGoogle(): Promise<GoogleDriveUser> {
+  connectedUser = null
   await requestAccessToken('select_account')
   const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!response.ok) throw new Error('Não foi possível identificar a conta Google conectada.')
-  return await response.json() as GoogleUserInfo
+  const user = await response.json() as GoogleUserInfo
+  if (!user.sub) throw new Error('O Google não retornou o identificador da conta.')
+  connectedUser = { id: user.sub, email: user.email, name: user.name }
+  return connectedUser
+}
+
+export function getConnectedGoogleUser(): GoogleDriveUser | null {
+  return connectedUser
 }
 
 export function signOutFromGoogle(): void {
   const tokenToRevoke = token
   token = ''
   tokenExpiresAt = 0
+  connectedUser = null
   if (tokenToRevoke && window.google) {
     window.google.accounts.oauth2.revoke(tokenToRevoke, () => undefined)
   }
+}
+
+export async function loadDriveLibrary(): Promise<DriveLibrarySnapshot | null> {
+  const params = new URLSearchParams({
+    spaces: 'drive',
+    pageSize: '100',
+    q: "appProperties has { key='application' and value='drum-studio' } and appProperties has { key='kind' and value='library' } and trashed = false",
+    fields: 'files(id,name,modifiedTime)',
+    orderBy: 'modifiedTime desc',
+  })
+  const response = await driveRequest(`/files?${params}`)
+  const result = await response.json() as GoogleDriveFileList
+  const file = result.files?.[0]
+  if (!file) return null
+
+  const contentResponse = await driveRequest(`/files/${encodeURIComponent(file.id)}?alt=media`)
+  const data: unknown = await contentResponse.json()
+  if (
+    typeof data !== 'object'
+    || data === null
+    || !('songs' in data)
+    || !Array.isArray(data.songs)
+    || !data.songs.every((song) =>
+      typeof song === 'object'
+      && song !== null
+      && 'id' in song
+      && typeof song.id === 'string'
+      && 'title' in song
+      && typeof song.title === 'string'
+      && 'artist' in song
+      && typeof song.artist === 'string')
+  ) {
+    throw new Error('A biblioteca salva no Google Drive está inválida ou corrompida.')
+  }
+  return data as DriveLibrarySnapshot
+}
+
+export async function saveDriveLibrary(snapshot: DriveLibrarySnapshot): Promise<void> {
+  const params = new URLSearchParams({
+    spaces: 'drive',
+    pageSize: '100',
+    q: "appProperties has { key='application' and value='drum-studio' } and appProperties has { key='kind' and value='library' } and trashed = false",
+    fields: 'files(id,name,modifiedTime)',
+    orderBy: 'modifiedTime desc',
+  })
+  const listResponse = await driveRequest(`/files?${params}`)
+  const result = await listResponse.json() as GoogleDriveFileList
+  const existingFile = result.files?.[0]
+  const content = new Blob([JSON.stringify(snapshot)], { type: 'application/json' })
+  const metadata = {
+    name: 'Drum Studio - biblioteca.json',
+    mimeType: 'application/json',
+    description: JSON.stringify({ kind: 'library' }),
+    appProperties: { application: 'drum-studio', kind: 'library' },
+  }
+  const path = existingFile
+    ? `/files/${encodeURIComponent(existingFile.id)}?uploadType=resumable&fields=id`
+    : '/files?uploadType=resumable&fields=id'
+  const session = await driveRequest(path, {
+    method: existingFile ? 'PATCH' : 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=UTF-8',
+      'X-Upload-Content-Type': 'application/json',
+      'X-Upload-Content-Length': String(content.size),
+    },
+    body: JSON.stringify(metadata),
+  }, true)
+  const uploadUrl = session.headers.get('Location')
+  if (!uploadUrl) throw new Error('O Google Drive não retornou o endereço de envio da biblioteca.')
+  await driveRequest(uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: content,
+  })
 }
 
 export async function listDriveScoreBackups(): Promise<DriveScoreBackup[]> {
@@ -183,7 +289,7 @@ export async function listDriveScoreBackups(): Promise<DriveScoreBackup[]> {
         backups.push({
           id: file.id,
           ...details,
-          createdAt: Date.parse(file.createdTime),
+          createdAt: Date.parse(file.createdTime ?? ''),
         })
       } catch (error) {
         console.error(`Não foi possível ler os metadados do backup ${file.id}:`, error)
@@ -198,6 +304,7 @@ export async function listDriveScoreBackups(): Promise<DriveScoreBackup[]> {
 export async function uploadDriveScoreBackup(
   score: Omit<DriveScoreBackup, 'id' | 'createdAt'>,
   data: Blob,
+  existingFileId?: string,
 ): Promise<void> {
   const metadata = {
     name: `Drum Studio - ${score.title}`,
@@ -205,8 +312,11 @@ export async function uploadDriveScoreBackup(
     description: JSON.stringify(score),
     appProperties: { application: 'drum-studio' },
   }
-  const session = await driveRequest('/files?uploadType=resumable&fields=id', {
-    method: 'POST',
+  const path = existingFileId
+    ? `/files/${encodeURIComponent(existingFileId)}?uploadType=resumable&fields=id`
+    : '/files?uploadType=resumable&fields=id'
+  const session = await driveRequest(path, {
+    method: existingFileId ? 'PATCH' : 'POST',
     headers: {
       'Content-Type': 'application/json; charset=UTF-8',
       'X-Upload-Content-Type': 'application/octet-stream',

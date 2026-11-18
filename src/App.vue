@@ -14,13 +14,14 @@ import Metronome from './components/Metronome.vue'
 import ChromaticTuner from './components/ChromaticTuner.vue'
 import MusicLibrary from './components/MusicLibrary.vue'
 
-type View = 'home' | 'library' | 'scores' | 'tuner'
+type View = 'home' | 'catalog' | 'library' | 'scores' | 'tuner'
 
 const isDark = ref(true)
 const activeView = ref<View>('home')
 
 const viewLabels: Record<View, string> = {
   home: 'Início',
+  catalog: 'Catálogo',
   library: 'Biblioteca musical',
   scores: 'Partituras',
   tuner: 'Afinador',
@@ -55,6 +56,9 @@ watch(isDark, applyTheme)
       <nav class="navigation" aria-label="Navegação principal">
         <button class="nav-item" :class="{ active: activeView === 'home' }" @click="activeView = 'home'">
           <House :size="19" /><span>Início</span>
+        </button>
+        <button class="nav-item" :class="{ active: activeView === 'catalog' }" @click="activeView = 'catalog'">
+          <BookOpen :size="19" /><span>Catálogo</span>
         </button>
         <button class="nav-item" :class="{ active: activeView === 'library' }" @click="activeView = 'library'">
           <Library :size="19" /><span>Músicas</span>
@@ -124,6 +128,12 @@ watch(isDark, applyTheme)
             <p>Guarde referências de músicas do Spotify e do YouTube para seus estudos.</p>
             <span class="feature-link">Abrir biblioteca <span aria-hidden="true">→</span></span>
           </button>
+          <button class="feature-card" @click="activeView = 'catalog'">
+            <div class="card-icon"><BookOpen :size="21" /></div>
+            <h3>Catálogo de estudos</h3>
+            <p>Explore partituras originais para bateria, baixo, violão e teclado.</p>
+            <span class="feature-link">Explorar catálogo <span aria-hidden="true">→</span></span>
+          </button>
           <button class="feature-card" @click="activeView = 'scores'">
             <div class="card-icon"><BookOpen :size="21" /></div>
             <h3>Partituras</h3>
@@ -133,8 +143,10 @@ watch(isDark, applyTheme)
         </section>
       </template>
 
-      <MusicLibrary v-else-if="activeView === 'library'" initial-tab="library" />
-      <MusicLibrary v-else-if="activeView === 'scores'" initial-tab="scores" />
+      <MusicLibrary
+        v-else-if="activeView === 'catalog' || activeView === 'library' || activeView === 'scores'"
+        :initial-tab="activeView === 'catalog' ? 'catalog' : activeView === 'library' ? 'library' : 'scores'"
+      />
       <ChromaticTuner v-else />
 
       <footer class="footer">
@@ -145,6 +157,7 @@ watch(isDark, applyTheme)
 
     <nav class="mobile-navigation" aria-label="Navegação móvel">
       <button :class="{ active: activeView === 'home' }" @click="activeView = 'home'"><House :size="20" /><span>Início</span></button>
+      <button :class="{ active: activeView === 'catalog' }" @click="activeView = 'catalog'"><BookOpen :size="20" /><span>Catálogo</span></button>
       <button :class="{ active: activeView === 'library' }" @click="activeView = 'library'"><Library :size="20" /><span>Músicas</span></button>
       <button :class="{ active: activeView === 'scores' }" @click="activeView = 'scores'"><BookOpen :size="20" /><span>Partituras</span></button>
       <button :class="{ active: activeView === 'tuner' }" @click="activeView = 'tuner'"><Volume2 :size="20" /><span>Afinador</span></button>
